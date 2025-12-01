@@ -6,7 +6,7 @@ jobs:
   build-immortalwrt:
     runs-on: ubuntu-22.04  # 官方推荐编译环境
     steps:
-      # 新增步骤：清理磁盘空间（解决空间不足问题）
+    # 新增步骤：清理磁盘空间（解决空间不足问题）
 - name: 清理磁盘空间
   run: |
     # 移除预装的大型软件（如Docker、SDK等）
