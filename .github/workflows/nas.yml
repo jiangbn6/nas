@@ -1,117 +1,34 @@
 name: Build ImmortalWrt for NAS
 
 on:
-  # 手动触发工作流
   workflow_dispatch:
-    inputs:
-      build_version:
-        description: '固件版本标签'
-        required: false
-        default: 'v1.0'
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 120 # 设置超时，避免长时间占用
 
     steps:
-      # 步骤 1: 检出 ImmortalWrt 源码
-      - name: Checkout ImmortalWrt Source
+      - name: Checkout Source
         uses: actions/checkout@v4
         with:
           repository: immortalwrt/immortalwrt
-          ref: openwrt-23.05 # 使用稳定的 23.05 分支
-          submodules: recursive
+          ref: openwrt-23.05
 
-      # 步骤 2: 更新并安装 feeds (软件源)
-      - name: Update and Install Feeds
-        run: |
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
-
-      # 步骤 3: 写入基础编译配置 (包含DDNS-GO和Passwall)
-      - name: Write Base Configuration
+      - name: Write Config
         run: |
           cat > .config << 'EOF'
-# 目标系统架构：x86_64，适用于NAS虚拟机
 CONFIG_TARGET_x86=y
 CONFIG_TARGET_x86_64=y
 CONFIG_TARGET_x86_64_Generic=y
-
-# 镜像格式与UEFI启动
 CONFIG_TARGET_IMAGES_GZIP=y
 CONFIG_TARGET_IMAGES_UEFI_BOOT=y
-CONFIG_TARGET_ROOTFS_EXT4FS=y
-CONFIG_TARGET_ROOTFS_PARTSIZE=512
-
-# 基础LuCI界面 (Web管理)
 CONFIG_PACKAGE_luci=y
 CONFIG_PACKAGE_luci-base=y
-CONFIG_PACKAGE_luci-compat=y
-CONFIG_LUCI_LANG_zh_Hans=y
-
-# 必要工具
 CONFIG_PACKAGE_iputils-ping=y
 CONFIG_PACKAGE_ethtool=y
-
-# 虚拟化环境支持
 CONFIG_PACKAGE_kmod-virtio-net=y
 CONFIG_PACKAGE_kmod-virtio-pci=y
-CONFIG_PACKAGE_kmod-virtio-balloon=y
-
-# 常见网卡驱动支持
-CONFIG_PACKAGE_kmod-e1000e=y
-CONFIG_PACKAGE_kmod-igb=y
-CONFIG_PACKAGE_kmod-r8169=y
-CONFIG_PACKAGE_kmod-tg3=y
-
-# 用户指定工具：DDNS-GO
 CONFIG_PACKAGE_ddns-go=y
 CONFIG_PACKAGE_luci-app-ddns-go=y
-
-# 用户指定工具：Passwall
 CONFIG_PACKAGE_luci-app-passwall=y
 EOF
-
-      # 步骤 4: 从内核层面禁用EEE功能 (解决直通网卡报错)
-      - name: Disable EEE in Kernel Config
-        run: |
-          # 方法：直接修改内核配置选项
-          echo "正在内核配置中禁用EEE..."
-          # 使用脚本自动应答 menuconfig
-          cat << '_EOF_' | make kernel_menuconfig
-/Energy Efficient Ethernet
-n
-_EOF_
-          # 再次确认配置已修改
-          sed -i 's/CONFIG_ENERGY_EFFICIENT_ETHERNET=y/# CONFIG_ENERGY_EFFICIENT_ETHERNET is not set/' .config 2>/dev/null || true
-
-      # 步骤 5: 应用配置并下载编译所需文件
-      - name: Finalize Config and Download
-        run: |
-          make defconfig
-          make download -j$(nproc)
-          # 检查核心配置
-          echo "检查关键配置:"
-          grep -E "(TARGET_x86|ENERGY_EFFICIENT_ETHERNET|ddns-go|passwall)" .config || true
-
-      # 步骤 6: 开始编译固件
-      - name: Start Compilation
-        run: |
-          echo "编译开始，此过程需要较长时间 (30-90分钟)..."
-          make -j$(($(nproc) + 1)) V=s 2>&1 | tee build.log | tail -30
-          # 简单的完成检查
-          echo "编译步骤完成。检查输出文件..."
-          ls -la bin/targets/x86/64/ 2>/dev/null || echo "输出目录可能不存在。"
-
-      # 步骤 7: 上传编译产物
-      - name: Upload Firmware Artifacts
-        if: success() # 仅在编译成功时上传
-        uses: actions/upload-artifact@v4
-        with:
-          name: ImmortalWrt-NAS-Firmware
-          path: |
-            bin/targets/x86/64/*.gz
-            bin/targets/x86/64/*.img
-            build.log
-          retention-days: 7
