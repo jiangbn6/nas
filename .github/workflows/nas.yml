@@ -14,6 +14,11 @@ jobs:
           repository: immortalwrt/immortalwrt
           ref: openwrt-23.05
 
+      - name: Update Feeds
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
       - name: Write Config
         run: |
           cat > .config << 'EOF'
@@ -32,3 +37,8 @@ CONFIG_PACKAGE_ddns-go=y
 CONFIG_PACKAGE_luci-app-ddns-go=y
 CONFIG_PACKAGE_luci-app-passwall=y
 EOF
+
+      - name: Disable EEE in Kernel
+        run: |
+          echo "Disabling EEE in kernel config..."
+          sed -i 's/CONFIG_ENERGY_EFFICIENT_ETHERNET=y/# CONFIG_ENERGY_EFFICIENT_ETHERNET is not set/' .config 2>/dev/null || true
