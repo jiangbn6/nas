@@ -54,12 +54,13 @@ CONFIG_PACKAGE_luci-app-passwall=y
 EOF
           make defconfig
 
-      - name: 禁用EEE
+       - name: 禁用EEE
         run: |
           echo "正在禁用EEE节能以太网功能..."
           sed -i 's/CONFIG_ENERGY_EFFICIENT_ETHERNET=y/# CONFIG_ENERGY_EFFICIENT_ETHERNET is not set/' .config
           sed -i 's/CONFIG_EEE=y/# CONFIG_EEE is not set/' .config
 
+      # 步骤6：下载依赖
       - name: 下载依赖
         run: make download -j$(nproc)
 
