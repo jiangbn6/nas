@@ -1,14 +1,13 @@
 name: 编译ImmortalWrt（飞牛NAS专用）
 
 on:
-  workflow_dispatch:  # 手动触发
+  workflow_dispatch:
 
 jobs:
   build-immortalwrt:
     runs-on: ubuntu-22.04
-    
+
     steps:
-      # 步骤1：配置环境
       - name: 配置环境
         run: |
           git config --global url."https://github.com/".insteadOf git://github.com/
@@ -16,7 +15,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential git libssl-dev python3
 
-      # 步骤2：拉取源码
       - name: 拉取源码
         uses: actions/checkout@v4
         with:
@@ -24,16 +22,13 @@ jobs:
           ref: openwrt-24.10
           fetch-depth: 0
 
-      # 步骤3：更新feeds
       - name: 更新Feeds
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      # 步骤4：配置编译选项
       - name: 配置编译选项
         run: |
-          # 基础配置
           cat > .config <<'EOF'
 CONFIG_TARGET_x86=y
 CONFIG_TARGET_x86_64=y
@@ -68,35 +63,28 @@ CONFIG_PACKAGE_luci-app-ddns-go=y
 CONFIG_PACKAGE_luci-app-passwall=y
 EOF
 
-          # 生成完整配置
           make defconfig
 
-      # 步骤5：禁用EEE内核功能
       - name: 禁用EEE
         run: |
           echo "正在禁用EEE节能以太网功能..."
           
-          # 方法1：使用menuconfig自动设置
           cat << 'EOF' | make kernel_menuconfig
 /Energy Efficient Ethernet
 n
 EOF
           
-          # 方法2：确保配置生效
           sed -i 's/CONFIG_ENERGY_EFFICIENT_ETHERNET=y/# CONFIG_ENERGY_EFFICIENT_ETHERNET is not set/' .config
           sed -i 's/CONFIG_EEE=y/# CONFIG_EEE is not set/' .config
 
-      # 步骤6：下载依赖
       - name: 下载依赖
         run: make download -j$(nproc)
 
-      # 步骤7：编译固件
       - name: 编译
         run: |
           echo "开始编译，预计需要30-60分钟..."
           make -j$(($(nproc) + 1)) V=s 2>&1 | tee build.log
           
-          # 检查编译结果
           if ls bin/targets/x86/64/*.img.gz 2>/dev/null; then
             echo "✅ 编译成功！"
           else
@@ -105,7 +93,6 @@ EOF
             exit 1
           fi
 
-      # 步骤8：上传固件
       - name: 上传固件
         uses: actions/upload-artifact@v4
         with:
