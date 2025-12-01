@@ -1,98 +1,86 @@
 name: 完整编译ImmortalWrt（飞牛NAS+双网卡适配）
 on:
-  workflow_dispatch:  # 手动触发，小白友好
+  workflow_dispatch:
 
 jobs:
   build-immortalwrt:
-    runs-on: ubuntu-22.04  # 官方推荐编译环境
+    runs-on: ubuntu-22.04
     steps:
-      # 步骤1：配置网络与系统依赖
-      - name: 配置基础环境
+      # 步骤1：强化基础环境与网络配置
+      - name: 配置基础环境与网络加速
         run: |
-          # 安装必要工具
-          sudo apt update && sudo apt install -y git wget curl
-          # 网络加速配置
+          # 安装必要系统工具（避免依赖缺失）
+          sudo apt update && sudo apt install -y \
+            build-essential clang flex bison g++ gawk gcc-multilib gettext \
+            git libncurses5-dev libssl-dev python3-distutils rsync unzip zlib1g-dev \
+            curl wget ca-certificates  # 补充证书和下载工具
+          
+          # 网络优化（多层加速）
           git config --global url."https://github.com/".insteadOf git://github.com/
+          git config --global url."https://hub.fgit.cf/".insteadOf https://github.com/  # 备用镜像
           echo "nameserver 8.8.8.8" | sudo tee /etc/resolv.conf
+          echo "nameserver 114.114.114.114" | sudo tee -a /etc/resolv.conf  # 多DNS冗余
 
-      # 步骤2：拉取ImmortalWrt源码
+      # 步骤2：拉取源码（增加超时控制）
       - name: 拉取官方源码
         uses: actions/checkout@v4
         with:
           repository: immortalwrt/immortalwrt
           ref: openwrt-24.10
           fetch-depth: 0
+          fetch-tags: true
+          submodules: 'recursive'
+          submodules-depth: 0
+          timeout-minutes: 30  # 延长超时时间
 
-      # 步骤3：添加软件源（优化版本，避免冲突）
-      - name: 配置软件源
+      # 步骤3：更新依赖（增强重试+错误排查）
+      - name: 更新依赖包（带详细日志）
         run: |
-          # 备份并清理原有第三方源
+          # 备份原始feeds配置（避免源冲突）
           cp feeds.conf.default feeds.conf.default.bak
+          # 仅保留官方核心源（减少第三方源干扰）
           grep -E '^src-git (base|packages|luci|routing|telephony)' feeds.conf.default.bak > feeds.conf.default
           
-          # 添加PassWall源（核心必要组件）
-          echo "src-git passwall https://github.com/xiaorouji/openwrt-passwall.git;main" >> feeds.conf.default
-          
-          # 添加DDNS-Go源（指定稳定分支）
-          echo "src-git ddnsgo https://github.com/jeessy2/ddns-go.git;openwrt" >> feeds.conf.default
-
-      # 步骤4：更新依赖包（带错误处理）
-      - name: 更新依赖包
-        run: |
-          # 重试机制解决网络问题
-          retry=3
-          while [ $retry -gt 0 ]; do
-            if ./scripts/feeds update -a; then
+          # 带详细日志的重试机制
+          retry=5  # 增加重试次数
+          interval=15  # 延长重试间隔
+          for ((i=1; i<=retry; i++)); do
+            echo "第$i次尝试更新依赖..."
+            if ./scripts/feeds update -a -v; then  # -v显示详细更新日志
+              echo "依赖更新成功"
               break
+            else
+              echo "第$i次更新失败，等待$interval秒后重试..."
+              sleep $interval
+              # 清理缓存重试
+              rm -rf feeds/packages/* feeds/luci/*
             fi
-            retry=$((retry - 1))
-            echo "更新失败，剩余重试次数: $retry"
-            sleep 10
           done
-          if [ $retry -eq 0 ]; then
-            echo "依赖更新失败"
+          # 检查是否成功
+          if [ $i -gt $retry ]; then
+            echo "依赖更新失败，查看详细日志定位问题"
             exit 1
           fi
-          # 强制安装避免版本冲突
+          
+          # 强制安装依赖（解决版本冲突）
           ./scripts/feeds install -a -f
 
-      # 步骤5：配置编译参数
+      # 步骤4：配置编译参数（保持不变）
       - name: 配置编译选项
         run: |
           cat > .config <<EOF
-          # 目标架构
           CONFIG_TARGET_x86=y
           CONFIG_TARGET_x86_64=y
           CONFIG_TARGET_x86_64_Generic=y
-
-          # 网卡驱动
           CONFIG_PACKAGE_kmod-tg3=y
           CONFIG_PACKAGE_kmod-e1000e=y
-
-          # 启动模式
           CONFIG_TARGET_IMAGES_UEFI_BOOT=y
-
-          # 基础功能
           CONFIG_PACKAGE_luci=y
           CONFIG_PACKAGE_iputils-ping=y
-
-          # 永久禁用EEE
-          CONFIG_PACKAGE_ethtool=y
-          CONFIG_NO_EEE=y  # 全局禁用EEE
-
-          # DDNS-Go基础功能
-          CONFIG_PACKAGE_ddns-go=y
-          CONFIG_PACKAGE_luci-app-ddns-go=y
-
-          # PassWall基础功能
-          CONFIG_PACKAGE_luci-app-passwall=y
-          CONFIG_PACKAGE_passwall=y
-          CONFIG_PACKAGE_v2ray-geoip=y
-          CONFIG_PACKAGE_v2ray-geosite=y
           EOF
           make defconfig
 
-      # 步骤6：下载依赖（带重试）
+      # 步骤5：下载依赖（带重试）
       - name: 下载依赖文件
         run: |
           for i in {1..3}; do
@@ -101,11 +89,11 @@ jobs:
             sleep 10
           done
 
-      # 步骤7：编译固件
+      # 步骤6：编译固件
       - name: 编译固件
         run: make -j$(nproc) V=s
 
-      # 步骤8：上传固件
+      # 步骤7：上传固件
       - name: 上传固件
         uses: actions/upload-artifact@v4
         with:
