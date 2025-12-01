@@ -91,3 +91,16 @@ jobs:
         with:
           name: nasopoenwrt
           path: bin/targets/x86/64/
+  
+# 新增步骤：清理磁盘空间（解决空间不足问题）
+- name: 清理磁盘空间
+  run: |
+    # 移除预装的大型软件（如Docker、SDK等）
+    sudo rm -rf /usr/share/dotnet
+    sudo rm -rf /opt/ghc
+    sudo rm -rf /usr/local/share/boost
+    sudo rm -rf /var/cache/apt/archives/*
+    # 清理Docker镜像和容器（如果存在）
+    sudo docker system prune -af
+    # 显示当前磁盘空间（验证清理效果）
+    df -h
