@@ -1,26 +1,25 @@
-name: 完整编译ImmortalWrt（飞牛NAS+双网卡适配）
-on:
-  workflow_dispatch:  # 手动触发，小白友好
-
 jobs:
   build-immortalwrt:
-    runs-on: ubuntu-22.04  # 官方推荐编译环境
+    runs-on: ubuntu-22.04
     steps:
-     - name: 清理磁盘空间
-       run: |
-         sudo rm -rf /usr/share/dotnet
-         sudo rm -rf /opt/ghc
-         sudo rm -rf /usr/local/share/boost
-         sudo rm -rf /var/cache/apt/archives/
-         sudo docker system prune -af
+      # 新增步骤：清理磁盘空间（放在最前面）
+      - name: 清理磁盘空间
+        run: |
+          # 移除预装的大型软件
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf /var/cache/apt/archives/*
+          # 清理Docker镜像和容器
+          sudo docker system prune -af
+          # 显示当前磁盘空间
           df -h
-      
-      
-      # 步骤1：配置网络加速（解决git拉取失败）
+
+      # 步骤1：配置网络加速（原步骤1顺延为步骤2）
       - name: 配置网络加速
         run: |
           git config --global url."https://github.com/".insteadOf git://github.com/
-          echo "nameserver 8.8.8.8" | sudo tee -a /etc/resolv.conf  # 修复DNS格式
+          echo "nameserver 8.8.8.8" | sudo tee -a /etc/resolv.conf
           echo "nameserver 114.114.114.114" | sudo tee -a /etc/resolv.conf
 
       # 步骤2：拉取ImmortalWrt源码（正确分支）
