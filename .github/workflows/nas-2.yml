@@ -1,0 +1,106 @@
+name: 完整编译ImmortalWrt（飞牛NAS+双网卡适配）
+on:
+  workflow_dispatch:  # 手动触发，小白友好
+
+jobs:
+  build-immortalwrt:
+    runs-on: ubuntu-22.04  # 官方推荐编译环境
+    steps:
+      # 步骤1：配置网络加速（解决git拉取失败）
+      - name: 配置网络加速
+        run: |
+          git config --global url."https://github.com/".insteadOf git://github.com/
+          echo "nameserver 8.8.8.8" | sudo tee -a /etc/resolv.conf  # 修复DNS格式
+          echo "nameserver 114.114.114.114" | sudo tee -a /etc/resolv.conf
+
+      # 步骤2：拉取ImmortalWrt源码（正确分支）
+      - name: 拉取官方源码
+        uses: actions/checkout@v4
+        with:
+          repository: immortalwrt/immortalwrt
+          ref: openwrt-24.10
+          fetch-depth: 0
+          submodules: 'recursive'  # 递归拉取子模块，避免依赖缺失
+
+      # 步骤3：更新依赖包
+      - name: 更新依赖包
+        run: |
+          retry=3
+          while [ $retry -gt 0 ]; do
+            if ./scripts/feeds update -a; then
+              break
+            fi
+            retry=$((retry - 1))
+            echo "更新失败，剩余重试次数: $retry"
+            sleep 10
+          done
+          if [ $retry -eq 0 ]; then
+            echo "依赖更新失败"
+            exit 1
+          fi
+          ./scripts/feeds install -a
+
+      # 步骤4：配置编译参数（包含EEE禁用+指定工具）
+      - name: 配置编译选项
+        run: |
+          cat > .config <<EOF
+          # 1. 目标架构：x86_64（飞牛NAS虚拟机）
+          CONFIG_TARGET_x86=y
+          CONFIG_TARGET_x86_64=y
+          CONFIG_TARGET_x86_64_Generic=y
+
+          # 2. 网卡驱动（Broadcom+Intel网卡）
+          CONFIG_PACKAGE_kmod-tg3=y  # Broadcom NetXtreme B网卡驱动
+          CONFIG_PACKAGE_kmod-e1000e=y  # Intel I211网卡驱动
+
+          # 3. 禁用EEE（节能以太网）
+          CONFIG_NET_DEVLINK=y
+          CONFIG_E1000E_DISABLE_EEE=y  # Intel网卡禁用EEE
+          CONFIG_TG3_DISABLE_EEE=y     # Broadcom网卡禁用EEE
+
+          # 4. 启动模式：UEFI（虚拟机必须）
+          CONFIG_TARGET_IMAGES_UEFI_BOOT=y
+
+          # 5. 基础功能
+          CONFIG_PACKAGE_luci=y
+          CONFIG_PACKAGE_iputils-ping=y
+
+          # 6. 指定工具
+          CONFIG_PACKAGE_ddns-go=y  # ddns-go动态域名解析
+          CONFIG_PACKAGE_luci-app-passwall=y  # passwall主程序
+          CONFIG_PACKAGE_luci-i18n-passwall-zh-cn=y  # passwall中文语言包
+          EOF
+          make defconfig
+
+      # 步骤5：下载编译依赖（增加重试）
+      - name: 下载依赖文件
+        run: |
+          for i in {1..3}; do
+            make download -j$(nproc) && break
+            echo "第$i次下载失败，重试中..."
+            sleep 10
+          done
+
+      # 步骤6：开始编译固件
+      - name: 编译固件
+        run: make -j$(nproc) V=s
+
+      # 步骤7：上传编译好的固件
+      - name: 上传固件
+        uses: actions/upload-artifact@v4
+        with:
+          name: nasopoenwrt
+          path: bin/targets/x86/64/
+  
+# 新增步骤：清理磁盘空间（解决空间不足问题）
+- name: 清理磁盘空间
+  run: |
+    # 移除预装的大型软件（如Docker、SDK等）
+    sudo rm -rf /usr/share/dotnet
+    sudo rm -rf /opt/ghc
+    sudo rm -rf /usr/local/share/boost
+    sudo rm -rf /var/cache/apt/archives/*
+    # 清理Docker镜像和容器（如果存在）
+    sudo docker system prune -af
+    # 显示当前磁盘空间（验证清理效果）
+    df -h
