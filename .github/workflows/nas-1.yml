@@ -1,32 +1,28 @@
 name: 完整编译ImmortalWrt（飞牛NAS+双网卡适配）
 on:
-  workflow_dispatch:  # 手动触发
+  workflow_dispatch:  # 手动触发，小白友好
 
 jobs:
   build-immortalwrt:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-22.04  # 官方推荐编译环境
     steps:
-      # 步骤1：修复网络配置（移除无效镜像源）
+      # 步骤1：配置网络加速（解决git拉取失败）
       - name: 配置网络加速
         run: |
-          # 仅保留有效的GitHub URL替换
           git config --global url."https://github.com/".insteadOf git://github.com/
-          # 修复DNS配置（使用标准格式）
-          echo "nameserver 8.8.8.8" | sudo tee /etc/resolv.conf
+          echo "nameserver 8.8.8.8" | sudo tee -a /etc/resolv.conf  # 修复DNS格式
           echo "nameserver 114.114.114.114" | sudo tee -a /etc/resolv.conf
 
-      # 步骤2：拉取源码（移除无效参数）
+      # 步骤2：拉取ImmortalWrt源码（正确分支）
       - name: 拉取官方源码
         uses: actions/checkout@v4
         with:
           repository: immortalwrt/immortalwrt
           ref: openwrt-24.10
           fetch-depth: 0
-          fetch-tags: true
-          submodules: 'recursive'  # 仅保留支持的参数
-          set-safe-directory: true
+          submodules: 'recursive'  # 递归拉取子模块，避免依赖缺失
 
-      # 步骤3：更新依赖包（增加重试机制）
+      # 步骤3：更新依赖包
       - name: 更新依赖包
         run: |
           retry=3
@@ -44,7 +40,7 @@ jobs:
           fi
           ./scripts/feeds install -a
 
-      # 步骤4：配置编译参数（保持不变）
+      # 步骤4：配置编译参数（包含EEE禁用+指定工具）
       - name: 配置编译选项
         run: |
           cat > .config <<EOF
@@ -53,16 +49,26 @@ jobs:
           CONFIG_TARGET_x86_64=y
           CONFIG_TARGET_x86_64_Generic=y
 
-          # 2. 网卡驱动
+          # 2. 网卡驱动（Broadcom+Intel网卡）
           CONFIG_PACKAGE_kmod-tg3=y  # Broadcom NetXtreme B网卡驱动
           CONFIG_PACKAGE_kmod-e1000e=y  # Intel I211网卡驱动
 
-          # 3. 启动模式：UEFI
+          # 3. 禁用EEE（节能以太网）
+          CONFIG_NET_DEVLINK=y
+          CONFIG_E1000E_DISABLE_EEE=y  # Intel网卡禁用EEE
+          CONFIG_TG3_DISABLE_EEE=y     # Broadcom网卡禁用EEE
+
+          # 4. 启动模式：UEFI（虚拟机必须）
           CONFIG_TARGET_IMAGES_UEFI_BOOT=y
 
-          # 4. 基础功能
+          # 5. 基础功能
           CONFIG_PACKAGE_luci=y
           CONFIG_PACKAGE_iputils-ping=y
+
+          # 6. 指定工具
+          CONFIG_PACKAGE_ddns-go=y  # ddns-go动态域名解析
+          CONFIG_PACKAGE_luci-app-passwall=y  # passwall主程序
+          CONFIG_PACKAGE_luci-i18n-passwall-zh-cn=y  # passwall中文语言包
           EOF
           make defconfig
 
