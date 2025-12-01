@@ -6,7 +6,6 @@ jobs:
   build-immortalwrt:
     runs-on: ubuntu-22.04  # 官方推荐编译环境
     steps:
-    
      - name: 清理磁盘空间
        run: |
          sudo rm -rf /usr/share/dotnet
