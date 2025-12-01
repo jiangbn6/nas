@@ -30,7 +30,7 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      # 步骤4：配置编译选项
+       # 步骤4：配置编译选项
       - name: 配置编译选项
         run: |
           cat > .config << 'EOF'
