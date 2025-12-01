@@ -91,8 +91,7 @@ jobs:
         with:
           name: nasopoenwrt
           path: bin/targets/x86/64/
-  
-# 新增步骤：清理磁盘空间（解决空间不足问题）
+      # 新增步骤：清理磁盘空间（解决空间不足问题）
 - name: 清理磁盘空间
   run: |
     # 移除预装的大型软件（如Docker、SDK等）
